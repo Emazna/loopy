@@ -1,0 +1,21 @@
+{
+  "name": "@emazna/loop-runner",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@emazna/codex-app-server-adapter": "0.1.0",
+    "@emazna/loop-runtime": "0.1.0",
+    "@emazna/loop-storage": "0.1.0",
+    "ajv": "^8.17.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

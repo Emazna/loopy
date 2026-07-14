@@ -1,0 +1,36 @@
+{
+  "name": "@emazna/loop-canvas",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n web,runner -c cyan,magenta \"npm run dev:web\" \"npm run dev:runner\"",
+    "dev:web": "npm --workspace @emazna/loop-web run dev",
+    "dev:runner": "npm --workspace @emazna/loop-runner run dev",
+    "build": "npm --workspace @emazna/loop-web run build",
+    "start": "concurrently -k -n web,runner -c cyan,magenta \"npm --workspace @emazna/loop-web run start\" \"npm --workspace @emazna/loop-runner run start\"",
+    "typecheck": "npm --workspaces --if-present run typecheck",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm test && npm run build",
+    "codex:generate": "node scripts/generate-codex-schema.mjs",
+    "smoke:app-server": "tsx scripts/smoke-app-server.ts",
+    "smoke:runtime": "tsx scripts/smoke-runtime.ts",
+    "smoke:controls": "tsx scripts/smoke-controls.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "concurrently": "^10.0.3",
+    "postcss": "^8.5.19",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.17"
+  },
+  "overrides": {
+    "postcss": "$postcss"
+  }
+}
