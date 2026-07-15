@@ -12,7 +12,7 @@ export const ENGINES: Array<{ id: EngineKind; label: string }> = [
  */
 export const ENGINE_MODELS: Record<EngineKind, string[]> = {
   codex: ["gpt-5.4", "gpt-5.4-mini", "gpt-5.5"],
-  claude: ["claude-sonnet-5", "claude-opus-4-8", "claude-haiku-4-5-20251001"],
+  claude: ["claude-sonnet-5", "claude-fable-5", "claude-opus-4-8", "claude-haiku-4-5-20251001"],
 };
 
 export function isEngineKind(value: unknown): value is EngineKind {
