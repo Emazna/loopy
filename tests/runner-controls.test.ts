@@ -52,7 +52,7 @@ describe("runner control state guards", () => {
       pauseRequested: false,
       client: { interrupt },
     };
-    (runner as unknown as { active: unknown }).active = context;
+    (runner as unknown as { activeContexts: Map<string, unknown> }).activeContexts.set(run.id, context);
     store.enqueueControl(run.id, "stop");
 
     await processControls(runner);
@@ -69,14 +69,14 @@ describe("runner control state guards", () => {
     const running = store.claimQueuedRun()!;
     const visit = store.startNodeVisit(run.id, running.nextNodeId!, null, "prompt");
     const interaction = store.createPendingInteraction(run.id, visit.id, "request-1", "item/tool/requestUserInput", {});
-    (runner as unknown as { active: unknown }).active = {
+    (runner as unknown as { activeContexts: Map<string, unknown> }).activeContexts.set(run.id, {
       runId: run.id,
       threadId: "thread-1",
       turnId: "turn-1",
       stopRequested: false,
       pauseRequested: false,
       client: { replyServerRequest: vi.fn().mockRejectedValue(new Error("closed")) },
-    };
+    });
     store.enqueueControl(run.id, "answer_input", { interactionId: interaction.id, answers: { answer: "yes" } });
 
     await processControls(runner);
@@ -93,14 +93,14 @@ describe("runner control state guards", () => {
     const visit = store.startNodeVisit(run.id, running.nextNodeId!, null, "prompt");
     const interaction = store.createPendingInteraction(run.id, visit.id, "42", "item/tool/requestUserInput", {});
     const replyServerRequest = vi.fn().mockResolvedValue(undefined);
-    (runner as unknown as { active: unknown }).active = {
+    (runner as unknown as { activeContexts: Map<string, unknown> }).activeContexts.set(run.id, {
       runId: run.id,
       threadId: "thread-1",
       turnId: "turn-1",
       stopRequested: false,
       pauseRequested: false,
       client: { replyServerRequest },
-    };
+    });
     store.enqueueControl(run.id, "answer_input", { interactionId: interaction.id, answers: { answer: "yes" } });
 
     await processControls(runner);
@@ -118,7 +118,7 @@ describe("runner control state guards", () => {
     const visit = store.startNodeVisit(run.id, running.nextNodeId!, null, "prompt");
     store.attachTurn(visit.id, "turn-1", "session-1");
     const close = vi.fn().mockResolvedValue(undefined);
-    (runner as unknown as { active: unknown }).active = {
+    (runner as unknown as { activeContexts: Map<string, unknown> }).activeContexts.set(run.id, {
       runId: run.id,
       threadId: "thread-1",
       turnId: "turn-1",
@@ -126,7 +126,7 @@ describe("runner control state guards", () => {
       pauseRequested: false,
       transportLost: false,
       client: { interrupt: vi.fn().mockResolvedValue(undefined), close },
-    };
+    });
     store.enqueueControl(run.id, "stop");
 
     await processControls(runner);
@@ -152,7 +152,7 @@ describe("runner control state guards", () => {
       transportLost: false,
       client: { interrupt: vi.fn(), close },
     };
-    (runner as unknown as { active: unknown }).active = context;
+    (runner as unknown as { activeContexts: Map<string, unknown> }).activeContexts.set(run.id, context);
     store.enqueueControl(run.id, "stop");
 
     await processControls(runner);
@@ -167,12 +167,12 @@ describe("runner control state guards", () => {
     const { store, runner } = fixture();
     const run = store.createRun();
     store.setRunStatus(run.id, "paused", "test pause");
-    (runner as unknown as { active: unknown }).active = {
+    (runner as unknown as { activeContexts: Map<string, unknown> }).activeContexts.set(run.id, {
       runId: run.id,
       threadId: null,
       turnId: null,
       client: { close: vi.fn().mockResolvedValue(undefined) },
-    };
+    });
 
     await runner.stop();
 

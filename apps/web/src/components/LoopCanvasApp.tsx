@@ -32,6 +32,9 @@ import {
   Activity,
   AlertTriangle,
   CheckCircle2,
+  Copy,
+  Plus,
+  Trash2,
   CircleAlert,
   CirclePause,
   CircleStop,
@@ -56,6 +59,7 @@ import type {
   BootstrapPayload,
   CanvasFlowNode,
   Notice,
+  WorkflowSummary,
 } from "./ui-types";
 import { mergeEvents } from "./ui-types";
 import { WorkflowNodeCard } from "./WorkflowNodeCard";
@@ -208,6 +212,7 @@ function activeRun(snapshot: RunSnapshot | null): boolean {
 
 export function LoopCanvasApp() {
   const [workflow, setWorkflow] = useState<WorkflowDefinition | null>(null);
+  const [workflowList, setWorkflowList] = useState<WorkflowSummary[]>([]);
   const [snapshot, setSnapshot] = useState<RunSnapshot | null>(null);
   const [canvasNodes, setCanvasNodes] = useState<CanvasFlowNode[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -221,6 +226,7 @@ export function LoopCanvasApp() {
   const [validationOpen, setValidationOpen] = useState(false);
   const [confirmAction, setConfirmAction] = useState<"interrupt" | "stop" | null>(null);
   const [runConfirmOpen, setRunConfirmOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const refreshTimer = useRef<number | null>(null);
 
   const localIssues = useMemo(() => workflow ? validateWorkflow(workflow) : [], [workflow]);
@@ -240,11 +246,18 @@ export function LoopCanvasApp() {
     setLoading(true);
     setFatalError("");
     try {
-      const payload = await api<BootstrapPayload>("/api/bootstrap");
+      const requested = new URLSearchParams(window.location.search).get("workflow");
+      const payload = await api<BootstrapPayload>(
+        `/api/bootstrap${requested ? `?workflow=${encodeURIComponent(requested)}` : ""}`,
+      );
       setWorkflow(payload.workflow);
+      setWorkflowList(payload.workflows);
       setSnapshot(payload.latestRun);
       setSelectedNodeId(payload.workflow.nodes.find((node) => node.kind === "agent")?.id ?? payload.workflow.nodes[0]?.id ?? null);
       setDirty(false);
+      // 存在しないIDを指定していた場合などは、実際に開いたワークフローへURLを揃える
+      const canonical = `${window.location.pathname}?workflow=${encodeURIComponent(payload.workflow.id)}`;
+      window.history.replaceState(null, "", canonical);
     } catch (error) {
       setFatalError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -298,7 +311,8 @@ export function LoopCanvasApp() {
     if (!workflow || snapshot) return;
     const timer = window.setInterval(async () => {
       try {
-        const payload = await api<BootstrapPayload>("/api/bootstrap");
+        const payload = await api<BootstrapPayload>(`/api/bootstrap?workflow=${encodeURIComponent(workflow.id)}`);
+        setWorkflowList(payload.workflows);
         setSnapshot((current) => current ?? payload.latestRun);
       } catch {
         // 取得できなくても、この画面から開始したrunはstartRunで反映される。
@@ -537,6 +551,7 @@ export function LoopCanvasApp() {
       });
       setWorkflow(payload.workflow);
       setDirty(false);
+      setWorkflowList((current) => current.map((item) => item.id === payload.workflow.id ? { ...item, name: payload.workflow.name } : item));
       setNotice({ kind: "success", message: "保存しました。" });
       return payload.workflow;
     } catch (error) {
@@ -557,7 +572,10 @@ export function LoopCanvasApp() {
     }
     setBusyAction("run");
     try {
-      const payload = await api<{ run: RunSnapshot }>("/api/runs", { method: "POST" });
+      const payload = await api<{ run: RunSnapshot }>("/api/runs", {
+        method: "POST",
+        body: JSON.stringify({ workflowId: workflow.id }),
+      });
       setSnapshot(payload.run);
       setSelectedNodeId(payload.run.definition.nodes[0]?.id ?? null);
       setNotice({ kind: "success", message: "実行を始めました。この画面を閉じても実行は続きます。" });
@@ -620,6 +638,44 @@ export function LoopCanvasApp() {
     return () => window.removeEventListener("keydown", handleDeleteKey);
   }, [editingLocked, selectedEdgeId, selectedNodeId]);
 
+  function switchWorkflow(id: string) {
+    if (!workflow || id === workflow.id) return;
+    window.location.href = `/?workflow=${encodeURIComponent(id)}`;
+  }
+
+  async function createWorkflow(sourceId?: string) {
+    setBusyAction("workflow");
+    try {
+      const payload = await api<{ workflow: WorkflowDefinition }>("/api/workflows", {
+        method: "POST",
+        body: JSON.stringify(sourceId ? { sourceId } : {}),
+      });
+      window.location.href = `/?workflow=${encodeURIComponent(payload.workflow.id)}`;
+    } catch (error) {
+      setNotice({ kind: "error", message: error instanceof Error ? error.message : String(error) });
+      setBusyAction(null);
+    }
+  }
+
+  async function deleteWorkflow() {
+    if (!workflow) return;
+    setDeleteConfirmOpen(false);
+    setBusyAction("workflow");
+    try {
+      await api<{ ok: boolean }>(`/api/workflows/${encodeURIComponent(workflow.id)}`, { method: "DELETE" });
+      window.location.href = "/";
+    } catch (error) {
+      setNotice({ kind: "error", message: error instanceof Error ? error.message : String(error) });
+      setBusyAction(null);
+    }
+  }
+
+  function changeWorkflowName(name: string) {
+    if (editingLocked) return;
+    setWorkflow((current) => current ? { ...current, name } : current);
+    setDirty(true);
+  }
+
   if (loading) return <LoadingScreen />;
   if (fatalError || !workflow) return <ErrorScreen message={fatalError || "ワークフローを読み込めませんでした。"} onRetry={loadBootstrap} />;
 
@@ -643,6 +699,41 @@ export function LoopCanvasApp() {
 
         <div className="header-context">
           <div className="environment-line">
+            <select
+              aria-label="ワークフローを切り替え"
+              className="workflow-select"
+              onChange={(event) => switchWorkflow(event.target.value)}
+              value={workflow.id}
+            >
+              {(workflowList.some((item) => item.id === workflow.id)
+                ? workflowList
+                : [{ id: workflow.id, name: workflow.name, updatedAt: "" }, ...workflowList]
+              ).map((item) => (
+                <option key={item.id} value={item.id}>{item.name}</option>
+              ))}
+            </select>
+            <input
+              aria-label="ワークフロー名"
+              className="workflow-name-input"
+              disabled={editingLocked}
+              onChange={(event) => changeWorkflowName(event.target.value)}
+              value={workflow.name}
+            />
+            <button className="wf-icon-button" disabled={busyAction !== null} onClick={() => void createWorkflow()} title="新しいワークフロー" type="button">
+              <Plus aria-hidden="true" size={15} />
+            </button>
+            <button className="wf-icon-button" disabled={busyAction !== null} onClick={() => void createWorkflow(workflow.id)} title="このワークフローを複製" type="button">
+              <Copy aria-hidden="true" size={15} />
+            </button>
+            <button
+              className="wf-icon-button wf-icon-button--danger"
+              disabled={busyAction !== null || activeRun(snapshot) || workflowList.length <= 1}
+              onClick={() => setDeleteConfirmOpen(true)}
+              title="このワークフローを削除"
+              type="button"
+            >
+              <Trash2 aria-hidden="true" size={15} />
+            </button>
             <select
               aria-label="実行エンジン"
               className="engine-select"
@@ -843,6 +934,21 @@ export function LoopCanvasApp() {
           }}
           workflow={workflow}
         />
+      ) : null}
+
+      {deleteConfirmOpen ? (
+        <ModalDialog ariaLabel="ワークフローの削除" onClose={() => setDeleteConfirmOpen(false)}>
+          <div className="dialog-icon" data-tone="danger">
+            <Trash2 aria-hidden="true" size={22} />
+          </div>
+          <p className="dialog-kicker">ワークフローの削除</p>
+          <h2>「{workflow.name}」を削除しますか？</h2>
+          <p className="dialog-lead">過去の実行記録は残りますが、ワークフロー本体の削除は取り消せません。</p>
+          <div className="dialog-actions">
+            <button className="button button--secondary" onClick={() => setDeleteConfirmOpen(false)} type="button">やめる</button>
+            <button className="button button--danger" onClick={() => void deleteWorkflow()} type="button">削除する</button>
+          </div>
+        </ModalDialog>
       ) : null}
 
       {confirmAction ? (

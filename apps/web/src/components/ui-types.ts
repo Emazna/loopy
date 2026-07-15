@@ -15,8 +15,15 @@ export interface AppHealth {
   codexHome?: string | null;
 }
 
+export interface WorkflowSummary {
+  id: string;
+  name: string;
+  updatedAt: string;
+}
+
 export interface BootstrapPayload {
   workflow: WorkflowDefinition;
+  workflows: WorkflowSummary[];
   latestRun: RunSnapshot | null;
   validationIssues: ValidationIssue[];
   health: AppHealth;

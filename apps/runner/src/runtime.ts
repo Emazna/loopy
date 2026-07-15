@@ -91,10 +91,15 @@ function decodeRequestId(stored: string): RequestId {
 export class LoopRunner {
   private pollTimer: NodeJS.Timeout | null = null;
   private tickBusy = false;
-  private activePromise: Promise<void> | null = null;
-  private active: ActiveContext | null = null;
+  /** 実行中のrun。cwdごとの排他はDB側の制約で担保しつつ、ここで並行実行を管理する。 */
+  private readonly activeContexts = new Map<string, ActiveContext>();
+  private readonly activePromises = new Map<string, Promise<void>>();
   private shuttingDown = false;
   private readonly ajv = new AjvConstructor({ allErrors: true, strict: false });
+  private readonly maxParallelRuns = Math.max(
+    1,
+    Number(process.env.LOOP_CANVAS_MAX_PARALLEL_RUNS ?? 3) || 3,
+  );
 
   constructor(private readonly store: LoopStore) {}
 
@@ -111,17 +116,17 @@ export class LoopRunner {
     this.shuttingDown = true;
     if (this.pollTimer) clearInterval(this.pollTimer);
     this.store.setMeta("runner_status", "stopping");
-    if (this.active) {
-      const run = this.store.getRun(this.active.runId);
+    for (const context of this.activeContexts.values()) {
+      const run = this.store.getRun(context.runId);
       if (run && !["completed", "failed", "cancelled", "paused", "recovery_required"].includes(run.status)) {
         this.store.markRunRecoveryRequired(run.id, "実行中にランナーが停止しました。");
       }
-      if (this.active.threadId && this.active.turnId) {
-        await this.active.client.interrupt(this.active.threadId, this.active.turnId).catch(() => undefined);
+      if (context.threadId && context.turnId) {
+        await context.client.interrupt(context.threadId, context.turnId).catch(() => undefined);
       }
-      await this.active.client.close();
+      await context.client.close();
     }
-    await this.activePromise?.catch(() => undefined);
+    await Promise.allSettled([...this.activePromises.values()]);
     this.store.setMeta("runner_status", "offline");
   }
 
@@ -131,21 +136,23 @@ export class LoopRunner {
     try {
       this.store.setMeta("runner_heartbeat", new Date().toISOString());
       await this.processControls();
-      if (!this.activePromise) {
+      // 空きスロットのぶんだけqueuedなrunを取り込み、並行実行する。
+      // 同じ作業フォルダのrunはDBの排他制約により同時にqueueへ入らない。
+      while (this.activePromises.size < this.maxParallelRuns) {
         const run = this.store.claimQueuedRun();
-        if (run) {
-          this.activePromise = this.executeRun(run)
-            .catch((error) => {
-              const current = this.store.getRun(run.id);
-              if (current && !["completed", "failed", "cancelled", "recovery_required"].includes(current.status)) {
-                this.store.setRunStatus(run.id, "failed", error instanceof Error ? error.message : String(error));
-              }
-            })
-            .finally(() => {
-              this.activePromise = null;
-              this.active = null;
-            });
-        }
+        if (!run) break;
+        const promise = this.executeRun(run)
+          .catch((error) => {
+            const current = this.store.getRun(run.id);
+            if (current && !["completed", "failed", "cancelled", "recovery_required"].includes(current.status)) {
+              this.store.setRunStatus(run.id, "failed", error instanceof Error ? error.message : String(error));
+            }
+          })
+          .finally(() => {
+            this.activePromises.delete(run.id);
+            this.activeContexts.delete(run.id);
+          });
+        this.activePromises.set(run.id, promise);
       }
     } finally {
       this.tickBusy = false;
@@ -158,7 +165,7 @@ export class LoopRunner {
       try {
         const run = this.store.getRun(command.runId);
         if (!run) throw new Error("対象の実行が見つかりません。");
-        const context = this.active?.runId === run.id ? this.active : null;
+        const context = this.activeContexts.get(run.id) ?? null;
         if (["completed", "failed", "cancelled"].includes(run.status)) {
           throw new Error(`この実行はすでに終了しています（${run.status}）。`);
         }
@@ -287,7 +294,7 @@ export class LoopRunner {
       transportLost: false,
       loadedThreads: new Set(),
     };
-    this.active = context;
+    this.activeContexts.set(initialRun.id, context);
 
     client.onNotification((notification) => {
       try {
@@ -821,7 +828,7 @@ export class LoopRunner {
         const run = this.store.getRun(context.runId);
         const visit = run?.currentNodeVisitId ? this.store.getVisit(run.currentNodeVisitId) : null;
         if (
-          this.active === context &&
+          this.activeContexts.get(context.runId) === context &&
           run?.status === "interrupting" &&
           visit?.status === "running" &&
           visit.codexTurnId === turnId

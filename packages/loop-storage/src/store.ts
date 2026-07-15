@@ -415,6 +415,34 @@ export class LoopStore {
     return row ? mapRun(row) : null;
   }
 
+  listWorkflows(): Array<{ id: string; name: string; updatedAt: string }> {
+    const rows = this.db
+      .prepare("SELECT id, name, updated_at FROM workflows ORDER BY updated_at DESC")
+      .all() as SqlRow[];
+    return rows.map((row) => ({
+      id: String(row.id),
+      name: String(row.name),
+      updatedAt: String(row.updated_at),
+    }));
+  }
+
+  getLatestRunForWorkflow(workflowId: string): RunRecord | null {
+    const row = this.db
+      .prepare("SELECT * FROM runs WHERE workflow_id = ? ORDER BY created_at DESC LIMIT 1")
+      .get(workflowId) as SqlRow | undefined;
+    return row ? mapRun(row) : null;
+  }
+
+  /** ワークフロー本体を削除する。過去のrun・不変バージョンは履歴として残す。 */
+  deleteWorkflow(id: string): void {
+    const active = this.db
+      .prepare(`SELECT id FROM runs WHERE workflow_id = ?
+        AND status NOT IN ('completed','failed','cancelled') LIMIT 1`)
+      .get(id) as SqlRow | undefined;
+    if (active) throw new Error("実行中（または未完了）のrunがあるため削除できません。先に停止してください。");
+    this.db.prepare("DELETE FROM workflows WHERE id = ?").run(id);
+  }
+
   getDefinitionForRun(runId: string): WorkflowDefinition {
     const row = this.db
       .prepare(`SELECT v.definition_json FROM workflow_versions v JOIN runs r ON r.workflow_version_id = v.id WHERE r.id = ?`)

@@ -284,6 +284,52 @@ pre,
   max-width: 260px;
 }
 
+/* ワークフローの切り替え・名前・管理ボタン */
+.workflow-select {
+  max-width: 190px;
+  width: auto;
+  min-height: 34px;
+  flex: none;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--surface);
+  padding: 4px 8px;
+  color: #2b333c;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.workflow-name-input {
+  width: 170px;
+  min-height: 34px;
+  flex: none;
+  padding: 4px 9px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.wf-icon-button {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  place-items: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--surface);
+  color: #3d4854;
+}
+
+.wf-icon-button:hover:not(:disabled) {
+  border-color: var(--brand-blue);
+  color: var(--brand-blue);
+}
+
+.wf-icon-button--danger:hover:not(:disabled) {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 .environment-line code {
   overflow: hidden;
   min-width: 60px;

@@ -9,8 +9,9 @@ export async function POST(request: NextRequest) {
   try {
     assertControlRequest(request);
     const store = appStore();
-    const workflow = store.getWorkflow("default");
-    if (!workflow) return NextResponse.json({ error: "Default workflow was not found." }, { status: 404 });
+    const body = (await request.json().catch(() => ({}))) as { workflowId?: string };
+    const workflow = store.getWorkflow(typeof body.workflowId === "string" && body.workflowId ? body.workflowId : "default");
+    if (!workflow) return NextResponse.json({ error: "対象のワークフローが見つかりません。" }, { status: 404 });
     const issues = validateWorkflow(workflow);
     if (issues.length > 0) return NextResponse.json({ issues }, { status: 400 });
     const run = store.createRun(workflow.id);

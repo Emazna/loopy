@@ -10,13 +10,19 @@ export async function GET(request: NextRequest) {
   try {
     assertLoopback(request);
     const store = appStore();
-    const workflow = store.getWorkflow("default")!;
-    const latest = store.getLatestRun();
+    const workflows = store.listWorkflows();
+    const requestedId = request.nextUrl.searchParams.get("workflow");
+    const workflowId = requestedId && workflows.some((w) => w.id === requestedId)
+      ? requestedId
+      : workflows[0]!.id;
+    const workflow = store.getWorkflow(workflowId)!;
+    const latest = store.getLatestRunForWorkflow(workflowId);
     const runnerHeartbeat = store.getMeta("runner_heartbeat");
     const heartbeatAt = runnerHeartbeat ? Date.parse(runnerHeartbeat) : Number.NaN;
     const runnerIsLive = Number.isFinite(heartbeatAt) && Date.now() - heartbeatAt < 5_000;
     const response = NextResponse.json({
       workflow,
+      workflows,
       latestRun: latest ? store.getRunSnapshot(latest.id) : null,
       validationIssues: validateWorkflow(workflow),
       health: {

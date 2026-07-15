@@ -19,7 +19,7 @@ export async function PUT(request: NextRequest) {
     }
     const workflow: WorkflowDefinition = {
       ...submitted,
-      id: "default",
+      id: typeof submitted.id === "string" && submitted.id.trim() ? submitted.id : "default",
       approvalPolicy: "never",
       sandboxMode: "danger-full-access",
       cwd,
