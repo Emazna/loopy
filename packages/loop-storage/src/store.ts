@@ -381,10 +381,17 @@ export class LoopStore {
 
     const transaction = this.db.transaction(() => {
       const active = this.db
-        .prepare(`SELECT id FROM runs WHERE cwd = ? COLLATE NOCASE
-          AND status NOT IN ('completed','failed','cancelled') LIMIT 1`)
+        .prepare(`SELECT runs.id, workflows.name AS workflow_name FROM runs
+          LEFT JOIN workflows ON workflows.id = runs.workflow_id
+          WHERE runs.cwd = ? COLLATE NOCASE
+          AND runs.status NOT IN ('completed','failed','cancelled') LIMIT 1`)
         .get(definition.cwd) as SqlRow | undefined;
-      if (active) throw new Error(`Working directory is already leased by run ${String(active.id)}.`);
+      if (active) {
+        const holder = active.workflow_name ? `ワークフロー「${String(active.workflow_name)}」` : "別のワークフロー";
+        throw new Error(
+          `この作業フォルダでは${holder}の実行がまだ終わっていません。そのワークフローを開いて実行を停止するか、作業フォルダを分けてください。`,
+        );
+      }
       const row = this.db
         .prepare("SELECT COALESCE(MAX(revision), 0) AS revision FROM workflow_versions WHERE workflow_id = ?")
         .get(workflowId) as SqlRow;

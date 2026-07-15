@@ -32,7 +32,7 @@ describe("LoopStore", () => {
     const store = new LoopStore(join(dir, "test.sqlite3"));
     store.ensureWorkflow(createDefaultWorkflow(dir, "gpt-5.4"));
     store.createRun();
-    expect(() => store.createRun()).toThrow(/already leased/);
+    expect(() => store.createRun()).toThrow(/実行がまだ終わっていません/);
     store.close();
   });
 
