@@ -58,7 +58,8 @@ export interface WorkflowEdge {
 export interface WorkflowLimits {
   maxNodeVisits: number;
   maxVisitsPerNode: number;
-  maxRunMinutes: number;
+  /** run全体のwall-clock上限（分）。未設定なら実行時間の上限なし。 */
+  maxRunMinutes?: number;
   turnTimeoutMinutes: number;
 }
 

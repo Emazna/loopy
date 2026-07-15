@@ -219,15 +219,15 @@ export function validateWorkflow(definition: WorkflowDefinition): ValidationIssu
   }
 
   const limits = definition.limits;
+  // maxRunMinutes は任意（未設定なら実行時間の上限なし）。設定する場合だけ1以上を要求する。
   if (
     !Number.isFinite(limits.maxNodeVisits) ||
     !Number.isFinite(limits.maxVisitsPerNode) ||
-    !Number.isFinite(limits.maxRunMinutes) ||
     !Number.isFinite(limits.turnTimeoutMinutes) ||
     limits.maxNodeVisits < 1 ||
     limits.maxVisitsPerNode < 1 ||
-    limits.maxRunMinutes < 1 ||
-    limits.turnTimeoutMinutes < 1
+    limits.turnTimeoutMinutes < 1 ||
+    (limits.maxRunMinutes !== undefined && (!Number.isFinite(limits.maxRunMinutes) || limits.maxRunMinutes < 1))
   ) {
     issues.push({ code: "invalid_limits", message: "回数と時間の上限は1以上の数値にしてください。" });
   }

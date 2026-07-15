@@ -328,7 +328,10 @@ export class LoopRunner {
       this.store.setMeta("codex_home", initialize.codexHome);
       this.store.appendEvent(initialRun.id, "appserver.connected", asJson(initialize));
       const startedAtMs = Date.parse(initialRun.startedAt ?? initialRun.createdAt);
-      const runDeadlineAt = startedAtMs + definition.limits.maxRunMinutes * 60_000;
+      // maxRunMinutes 未設定なら実行時間の上限なし（締切は無限遠に置く）。
+      const runDeadlineAt = definition.limits.maxRunMinutes
+        ? startedAtMs + definition.limits.maxRunMinutes * 60_000
+        : Number.POSITIVE_INFINITY;
 
       while (!this.shuttingDown) {
         const run = this.store.getRun(initialRun.id);

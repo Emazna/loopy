@@ -18,7 +18,7 @@ export function createDefaultWorkflow(
     limits: {
       maxNodeVisits: 60,
       maxVisitsPerNode: 20,
-      maxRunMinutes: 120,
+      // maxRunMinutes は設定しない（run全体の実行時間に上限を置かない）。
       turnTimeoutMinutes: 30,
     },
     nodes: [
