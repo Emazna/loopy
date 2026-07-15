@@ -15,6 +15,7 @@ import {
   renderPrompt,
   selectOutgoingEdge,
   setStateAtPath,
+  workflowEngine,
   type AgentNode,
   type JsonObject,
   type JsonValue,
@@ -24,7 +25,26 @@ import {
   type WorkflowNode,
 } from "@emazna/loop-runtime";
 import { LoopStore } from "@emazna/loop-storage";
+import { ClaudeCodeClient, ClaudeTurnRejectedError } from "./claude-client.js";
 import { normalizeNotification } from "./normalizer.js";
+
+/** runnerが利用するエンジンクライアントの共通面。Codex/Claudeの両実装が満たす。 */
+type EngineClient = Pick<
+  CodexAppServerClient,
+  | "onNotification"
+  | "onServerRequest"
+  | "onStderr"
+  | "onExit"
+  | "start"
+  | "close"
+  | "startThread"
+  | "resumeThread"
+  | "startTurn"
+  | "waitForTurn"
+  | "interrupt"
+  | "replyServerRequest"
+  | "rejectServerRequest"
+>;
 
 class RecoveryRequiredError extends Error {}
 
@@ -35,7 +55,7 @@ const AjvConstructor = createRequire(import.meta.url)("ajv") as new (options?: R
 
 interface ActiveContext {
   runId: string;
-  client: CodexAppServerClient;
+  client: EngineClient;
   definition: WorkflowDefinition;
   visitId: string | null;
   nodeId: string | null;
@@ -243,10 +263,13 @@ export class LoopRunner {
 
   private async executeRun(initialRun: RunRecord): Promise<void> {
     const definition = this.store.getDefinitionForRun(initialRun.id);
-    const client = new CodexAppServerClient({
-      codexBin: process.env.LOOP_CANVAS_CODEX_BIN,
-      codexHome: process.env.LOOP_CANVAS_CODEX_HOME,
-    });
+    // ワークフローの設定に応じて、Codex App Server か Claude Code CLI を使い分ける。
+    const client: EngineClient = workflowEngine(definition) === "claude"
+      ? new ClaudeCodeClient({ claudeBin: process.env.LOOP_CANVAS_CLAUDE_BIN })
+      : new CodexAppServerClient({
+          codexBin: process.env.LOOP_CANVAS_CODEX_BIN,
+          codexHome: process.env.LOOP_CANVAS_CODEX_HOME,
+        });
     const context: ActiveContext = {
       runId: initialRun.id,
       client,
@@ -508,7 +531,7 @@ export class LoopRunner {
       });
     } catch (error) {
       if (this.shuttingDown) return;
-      const definitelyRejected = error instanceof AppServerRpcError;
+      const definitelyRejected = error instanceof AppServerRpcError || error instanceof ClaudeTurnRejectedError;
       if (context.stopRequested && definitelyRejected) {
         this.cancelVisit(run, visit.id, session.id, "開始が受け付けられる前に停止しました。");
         return;
@@ -523,8 +546,8 @@ export class LoopRunner {
         activeSessionId: session.id,
         runStatus: definitelyRejected ? "failed" : "recovery_required",
         terminationReason: definitelyRejected
-          ? "Codexが処理の開始を拒否しました。"
-          : "turn/start outcome is unknown; automatic retry is disabled.",
+          ? "エンジンが処理の開始を拒否しました。"
+          : "処理を開始できたか不明です。自動での再実行は行いません。",
       });
       return;
     } finally {

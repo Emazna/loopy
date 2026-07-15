@@ -1,3 +1,4 @@
+import { isEngineKind } from "./engines";
 import type {
   AgentNode,
   DecisionNode,
@@ -149,6 +150,9 @@ export function validateWorkflow(definition: WorkflowDefinition): ValidationIssu
     issues.push({ code: "missing_end", message: "終了ノードを1つ以上置いてください。" });
   }
   if (!definition.model.trim()) issues.push({ code: "missing_model", message: "モデルを入力してください。" });
+  if (definition.engine !== undefined && !isEngineKind(definition.engine)) {
+    issues.push({ code: "invalid_engine", message: "エンジンは Codex か Claude を選んでください。" });
+  }
   if (!isAbsolutePath(definition.cwd)) issues.push({ code: "invalid_cwd", message: "作業フォルダは絶対パスで指定してください。" });
 
   const edgeIds = new Set<string>();

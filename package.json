@@ -20,7 +20,8 @@
     "codex:generate": "node scripts/generate-codex-schema.mjs",
     "smoke:app-server": "tsx scripts/smoke-app-server.ts",
     "smoke:runtime": "tsx scripts/smoke-runtime.ts",
-    "smoke:controls": "tsx scripts/smoke-controls.ts"
+    "smoke:controls": "tsx scripts/smoke-controls.ts",
+    "smoke:claude": "tsx scripts/smoke-claude.ts"
   },
   "devDependencies": {
     "@types/node": "^20.19.0",

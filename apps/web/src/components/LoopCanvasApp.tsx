@@ -1,8 +1,13 @@
 "use client";
 
 import {
+  defaultModelForEngine,
+  ENGINE_MODELS,
+  ENGINES,
   validateWorkflow,
+  workflowEngine,
   type ControlAction,
+  type EngineKind,
   type JsonValue,
   type RunSnapshot,
   type RunStatus,
@@ -353,6 +358,19 @@ export function LoopCanvasApp() {
     setDirty(true);
   }
 
+  function changeEngine(engine: EngineKind) {
+    if (editingLocked) return;
+    // エンジンを切り替えたら、そのエンジンの既定モデルに合わせる。
+    setWorkflow((current) => current ? { ...current, engine, model: defaultModelForEngine(engine) } : current);
+    setDirty(true);
+  }
+
+  function changeModel(model: string) {
+    if (editingLocked) return;
+    setWorkflow((current) => current ? { ...current, model } : current);
+    setDirty(true);
+  }
+
   function addTopologyNode(kind: "agent" | "decision") {
     if (editingLocked || !workflow) return;
     const sameKindCount = workflow.nodes.filter((node) => node.kind === kind).length + 1;
@@ -625,7 +643,28 @@ export function LoopCanvasApp() {
 
         <div className="header-context">
           <div className="environment-line">
-            <span>{workflow.model}</span>
+            <select
+              aria-label="実行エンジン"
+              className="engine-select"
+              disabled={editingLocked}
+              onChange={(event) => changeEngine(event.target.value as EngineKind)}
+              value={workflowEngine(workflow)}
+            >
+              {ENGINES.map((engine) => (
+                <option key={engine.id} value={engine.id}>{engine.label}</option>
+              ))}
+            </select>
+            <select
+              aria-label="モデル"
+              className="model-select"
+              disabled={editingLocked}
+              onChange={(event) => changeModel(event.target.value)}
+              value={workflow.model}
+            >
+              {[...new Set([...ENGINE_MODELS[workflowEngine(workflow)], workflow.model])].map((model) => (
+                <option key={model} value={model}>{model}</option>
+              ))}
+            </select>
             <code title={workflow.cwd}>{workflow.cwd}</code>
             <span className="save-state" data-dirty={dirty || undefined}>{dirty ? "未保存の変更" : "保存済み"}</span>
           </div>
@@ -928,6 +967,7 @@ function RunConfirmDialog({
       <p className="dialog-kicker">実行の確認</p>
       <h2>この内容で実行しますか？</h2>
       <dl className="run-confirm-summary">
+        <div><dt>エンジン</dt><dd>{workflowEngine(workflow) === "claude" ? "Claude Code（サブスクリプション枠を消費）" : "Codex"}</dd></div>
         <div><dt>モデル</dt><dd>{workflow.model}</dd></div>
         <div><dt>作業フォルダ</dt><dd><code>{workflow.cwd}</code></dd></div>
       </dl>

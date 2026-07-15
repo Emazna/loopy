@@ -5,6 +5,8 @@ export type JsonObject = { [key: string]: JsonValue };
 export type NodeKind = "start" | "agent" | "decision" | "end";
 export type SessionPolicy = "continue" | "fresh";
 export type ReasoningEffort = "low" | "medium" | "high" | "xhigh";
+/** 実行エンジン。codex=Codex CLI App Server、claude=Claude Code CLI（サブスクリプション枠を消費）。 */
+export type EngineKind = "codex" | "claude";
 
 export interface CanvasPosition {
   x: number;
@@ -63,6 +65,8 @@ export interface WorkflowLimits {
 export interface WorkflowDefinition {
   id: string;
   name: string;
+  /** 実行エンジン。過去データとの互換のため省略時は "codex" として扱う。 */
+  engine?: EngineKind;
   model: string;
   cwd: string;
   approvalPolicy: "never";

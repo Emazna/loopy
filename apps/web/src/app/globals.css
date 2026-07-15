@@ -265,6 +265,25 @@ pre,
   font-weight: 700;
 }
 
+/* ヘッダー左上のエンジン／モデル切り替え */
+.engine-select,
+.model-select {
+  width: auto;
+  min-height: 34px;
+  flex: none;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--surface);
+  padding: 4px 8px;
+  color: #2b333c;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.model-select {
+  max-width: 260px;
+}
+
 .environment-line code {
   overflow: hidden;
   min-width: 60px;
