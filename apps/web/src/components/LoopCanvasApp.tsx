@@ -1,13 +1,17 @@
 "use client";
 
 import {
+  clampEffortForModel,
   defaultModelForEngine,
+  effortLabel,
+  effortsForModel,
   ENGINE_MODELS,
   ENGINES,
   validateWorkflow,
   workflowEngine,
   type ControlAction,
   type EngineKind,
+  type ReasoningEffort,
   type JsonValue,
   type RunSnapshot,
   type RunStatus,
@@ -375,13 +379,27 @@ export function LoopCanvasApp() {
   function changeEngine(engine: EngineKind) {
     if (editingLocked) return;
     // エンジンを切り替えたら、そのエンジンの既定モデルに合わせる。
-    setWorkflow((current) => current ? { ...current, engine, model: defaultModelForEngine(engine) } : current);
+    setWorkflow((current) => {
+      if (!current) return current;
+      const model = defaultModelForEngine(engine);
+      return { ...current, engine, model, reasoningEffort: clampEffortForModel(engine, model, current.reasoningEffort) };
+    });
     setDirty(true);
   }
 
   function changeModel(model: string) {
     if (editingLocked) return;
-    setWorkflow((current) => current ? { ...current, model } : current);
+    setWorkflow((current) => current ? {
+      ...current,
+      model,
+      reasoningEffort: clampEffortForModel(workflowEngine(current), model, current.reasoningEffort),
+    } : current);
+    setDirty(true);
+  }
+
+  function changeEffort(reasoningEffort: ReasoningEffort) {
+    if (editingLocked) return;
+    setWorkflow((current) => current ? { ...current, reasoningEffort } : current);
     setDirty(true);
   }
 
@@ -756,6 +774,20 @@ export function LoopCanvasApp() {
                 <option key={model} value={model}>{model}</option>
               ))}
             </select>
+            {effortsForModel(workflowEngine(workflow), workflow.model).length > 0 ? (
+              <select
+                aria-label="インテリジェンス"
+                className="effort-select"
+                disabled={editingLocked}
+                onChange={(event) => changeEffort(event.target.value as ReasoningEffort)}
+                title="インテリジェンス（思考の深さ）"
+                value={workflow.reasoningEffort}
+              >
+                {[...new Set([...effortsForModel(workflowEngine(workflow), workflow.model), workflow.reasoningEffort])].map((effort) => (
+                  <option key={effort} value={effort}>{effortLabel(effort)}</option>
+                ))}
+              </select>
+            ) : null}
             <code title={workflow.cwd}>{workflow.cwd}</code>
             <span className="save-state" data-dirty={dirty || undefined}>{dirty ? "未保存の変更" : "保存済み"}</span>
           </div>
@@ -1075,6 +1107,9 @@ function RunConfirmDialog({
       <dl className="run-confirm-summary">
         <div><dt>エンジン</dt><dd>{workflowEngine(workflow) === "claude" ? "Claude Code（サブスクリプション枠を消費）" : "Codex"}</dd></div>
         <div><dt>モデル</dt><dd>{workflow.model}</dd></div>
+        {workflowEngine(workflow) === "codex" ? (
+          <div><dt>インテリジェンス</dt><dd>{effortLabel(workflow.reasoningEffort)}</dd></div>
+        ) : null}
         <div><dt>作業フォルダ</dt><dd><code>{workflow.cwd}</code></dd></div>
       </dl>
       <div className="dialog-warning">

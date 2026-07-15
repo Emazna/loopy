@@ -7,6 +7,11 @@ import {
   type ServerRequest,
 } from "@emazna/codex-app-server-adapter";
 
+// 例: LOOP_CANVAS_SMOKE_MODEL=gpt-5.6-sol LOOP_CANVAS_SMOKE_EFFORT=ultra npm run smoke:app-server
+const smokeModel = process.env.LOOP_CANVAS_SMOKE_MODEL ?? "gpt-5.4";
+const smokeEffort = process.env.LOOP_CANVAS_SMOKE_EFFORT ?? "low";
+const smokeWaitMs = Number(process.env.LOOP_CANVAS_SMOKE_WAIT_MS ?? 120_000);
+
 const workspace = await mkdtemp(join(tmpdir(), "emazna-loop-canvas-smoke-"));
 const sentinel = "loop-canvas-smoke-verified";
 await writeFile(join(workspace, "sentinel.txt"), `${sentinel}\n`, "utf8");
@@ -32,12 +37,12 @@ client.onStderr((line) => {
 try {
   const initialized = await client.start();
   const thread = await client.startThread({
-    model: "gpt-5.4",
+    model: smokeModel,
     cwd: resolve(workspace),
-    reasoningEffort: "low",
+    reasoningEffort: smokeEffort,
     ephemeral: true,
   });
-  if (thread.model !== "gpt-5.4") throw new Error(`Effective model drifted to ${thread.model}.`);
+  if (thread.model !== smokeModel) throw new Error(`Effective model drifted to ${thread.model}.`);
   if ((thread.sandbox as { type?: string }).type !== "dangerFullAccess") {
     throw new Error(`Expected dangerFullAccess, got ${JSON.stringify(thread.sandbox)}.`);
   }
@@ -46,9 +51,9 @@ try {
     threadId: thread.thread.id,
     prompt:
       "Read sentinel.txt from the current working directory. Do not modify any file. Return only JSON with ok=true and observed equal to the exact file content without whitespace.",
-    model: "gpt-5.4",
+    model: smokeModel,
     cwd: resolve(workspace),
-    effort: "low",
+    effort: smokeEffort,
     outputSchema: {
       type: "object",
       required: ["ok", "observed"],
@@ -59,7 +64,7 @@ try {
       },
     },
   });
-  const completed = await client.waitForTurn(thread.thread.id, turn.turn.id, 120_000);
+  const completed = await client.waitForTurn(thread.thread.id, turn.turn.id, smokeWaitMs);
   if (completed.turn.status !== "completed") {
     throw new Error(`Turn ended with ${completed.turn.status}: ${JSON.stringify(completed.turn.error)}`);
   }

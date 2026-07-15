@@ -1,4 +1,4 @@
-import { isEngineKind } from "./engines";
+import { effortLabel, effortsForModel, isEngineKind, workflowEngine } from "./engines";
 import type {
   AgentNode,
   DecisionNode,
@@ -152,6 +152,14 @@ export function validateWorkflow(definition: WorkflowDefinition): ValidationIssu
   if (!definition.model.trim()) issues.push({ code: "missing_model", message: "モデルを入力してください。" });
   if (definition.engine !== undefined && !isEngineKind(definition.engine)) {
     issues.push({ code: "invalid_engine", message: "エンジンは Codex か Claude を選んでください。" });
+  } else if (workflowEngine(definition) === "codex") {
+    const allowedEfforts = effortsForModel("codex", definition.model);
+    if (!allowedEfforts.includes(definition.reasoningEffort)) {
+      issues.push({
+        code: "invalid_reasoning_effort",
+        message: `モデル ${definition.model} ではインテリジェンス「${effortLabel(definition.reasoningEffort)}」を使えません。`,
+      });
+    }
   }
   if (!isAbsolutePath(definition.cwd)) issues.push({ code: "invalid_cwd", message: "作業フォルダは絶対パスで指定してください。" });
 

@@ -4,7 +4,7 @@ export type JsonObject = { [key: string]: JsonValue };
 
 export type NodeKind = "start" | "agent" | "decision" | "end";
 export type SessionPolicy = "continue" | "fresh";
-export type ReasoningEffort = "low" | "medium" | "high" | "xhigh";
+export type ReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
 /** 実行エンジン。codex=Codex CLI App Server、claude=Claude Code CLI（サブスクリプション枠を消費）。 */
 export type EngineKind = "codex" | "claude";
 

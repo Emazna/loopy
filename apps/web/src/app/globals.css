@@ -265,9 +265,10 @@ pre,
   font-weight: 700;
 }
 
-/* ヘッダー左上のエンジン／モデル切り替え */
+/* ヘッダー左上のエンジン／モデル／インテリジェンス切り替え */
 .engine-select,
-.model-select {
+.model-select,
+.effort-select {
   width: auto;
   min-height: 34px;
   flex: none;
@@ -282,6 +283,10 @@ pre,
 
 .model-select {
   max-width: 260px;
+}
+
+.effort-select {
+  max-width: 120px;
 }
 
 /* ワークフローの切り替え・名前・管理ボタン */
