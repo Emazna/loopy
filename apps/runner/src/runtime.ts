@@ -88,6 +88,27 @@ function decodeRequestId(stored: string): RequestId {
   }
 }
 
+/**
+ * turn待ち（無活動タイムアウト）に、run全体のwall-clock上限（maxRunMinutes設定時のみ）を重ねる。
+ * 締切で負けた場合もwaitForTurn側のrejectはPromise.raceが吸収するので未処理拒否にはならない。
+ */
+async function raceRunDeadline<T>(work: Promise<T>, deadlineAt: number, maxRunMinutes: number | undefined): Promise<T> {
+  let timer: NodeJS.Timeout | null = null;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        const delay = Math.min(2_147_483_647, Math.max(1, deadlineAt - Date.now()));
+        timer = setTimeout(() => {
+          reject(new Error(`実行時間が上限（${maxRunMinutes}分）に達しました。`));
+        }, delay);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export class LoopRunner {
   private pollTimer: NodeJS.Timeout | null = null;
   private tickBusy = false;
@@ -573,14 +594,13 @@ export class LoopRunner {
 
     let terminal;
     try {
-      const remainingRunMs = Math.max(1, runDeadlineAt - Date.now());
-      const turnDeadlineAt = turnStartRequestedAt + context.definition.limits.turnTimeoutMinutes * 60_000;
-      const remainingTurnMs = Math.max(1, turnDeadlineAt - Date.now());
-      terminal = await context.client.waitForTurn(
-        session.codexThreadId,
-        turn.turn.id,
-        Math.min(remainingTurnMs, remainingRunMs),
-      );
+      // turnTimeoutMinutesは無活動タイムアウト。イベントが流れ続けている限り、
+      // 1ターンの実行時間に上限はない（本当に止まったときだけ打ち切る）。
+      const inactivityMs = context.definition.limits.turnTimeoutMinutes * 60_000;
+      const waitTurn = context.client.waitForTurn(session.codexThreadId, turn.turn.id, inactivityMs);
+      terminal = Number.isFinite(runDeadlineAt)
+        ? await raceRunDeadline(waitTurn, runDeadlineAt, context.definition.limits.maxRunMinutes)
+        : await waitTurn;
     } catch (error) {
       if (this.shuttingDown) return;
       if (context.threadId && context.turnId && !context.transportLost) {
@@ -602,7 +622,9 @@ export class LoopRunner {
             ? "停止しましたが、処理の結果が不明です。自動での再実行は行いません。"
           : Date.now() >= runDeadlineAt
             ? `実行時間が上限（${context.definition.limits.maxRunMinutes}分）に達したため中断しました。自動での再実行は行いません。`
-            : "処理の結果が不明です。",
+            : error instanceof Error && error.message
+              ? error.message
+              : "処理の結果が不明です。",
       });
       return;
     }

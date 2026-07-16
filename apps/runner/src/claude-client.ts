@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { describeInactivity } from "@emazna/codex-app-server-adapter";
 import type {
   InitializeResult,
   JsonValue as AdapterJsonValue,
@@ -22,6 +23,8 @@ interface ActiveTurn {
   threadId: string;
   child: ChildProcessWithoutNullStreams;
   startedAt: number;
+  /** 無活動タイムアウト用。stdout/stderrに何か流れるたびに更新される。 */
+  lastActivityAt: number;
   interruptRequested: boolean;
   resultText: string | null;
   resultIsError: boolean;
@@ -154,6 +157,7 @@ export class ClaudeCodeClient {
       threadId: options.threadId,
       child,
       startedAt: Date.now(),
+      lastActivityAt: Date.now(),
       interruptRequested: false,
       resultText: null,
       resultIsError: false,
@@ -194,20 +198,34 @@ export class ClaudeCodeClient {
     return { turn: { id: turnId, status: "inProgress", error: null, durationMs: null } };
   }
 
-  waitForTurn(_threadId: string, turnId: string, timeoutMs: number): Promise<TurnCompletedParams> {
+  /**
+   * turnの完了を待つ。`inactivityTimeoutMs` は壁時計の上限ではなく無活動タイムアウト:
+   * 出力が流れ続けている限り待ち続け、途絶えたままこの時間が経過したときだけ打ち切る。
+   */
+  waitForTurn(_threadId: string, turnId: string, inactivityTimeoutMs: number): Promise<TurnCompletedParams> {
     const turn = this.activeTurn;
     if (!turn || turn.turnId !== turnId) {
       return Promise.reject(new Error("対象のターンが見つかりません。"));
     }
     return new Promise<TurnCompletedParams>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        stopProcessTree(turn.child.pid);
-        reject(new Error("Claude Codeの応答がターンの上限時間内に完了しませんでした。"));
-      }, Math.max(1, timeoutMs));
+      let timer: NodeJS.Timeout;
+      const arm = () => {
+        const remaining = turn.lastActivityAt + Math.max(1, inactivityTimeoutMs) - Date.now();
+        if (remaining <= 0) {
+          stopProcessTree(turn.child.pid);
+          reject(new Error(describeInactivity(inactivityTimeoutMs)));
+          return;
+        }
+        timer = setTimeout(arm, remaining);
+      };
+      timer = setTimeout(arm, Math.max(1, inactivityTimeoutMs));
       turn.terminal.then((terminal) => {
         clearTimeout(timer);
         resolve(terminal);
-      }, reject);
+      }, (error) => {
+        clearTimeout(timer);
+        reject(error as Error);
+      });
     });
   }
 
@@ -261,6 +279,7 @@ export class ClaudeCodeClient {
 
   private wireTurnStreams(turn: ActiveTurn): void {
     turn.child.stdout.on("data", (chunk: Buffer) => {
+      turn.lastActivityAt = Date.now();
       turn.stdoutBuffer += chunk.toString("utf8");
       let newlineIndex = turn.stdoutBuffer.indexOf("\n");
       while (newlineIndex >= 0) {
@@ -271,6 +290,7 @@ export class ClaudeCodeClient {
       }
     });
     turn.child.stderr.on("data", (chunk: Buffer) => {
+      turn.lastActivityAt = Date.now();
       for (const line of chunk.toString("utf8").split(/\r?\n/u)) {
         if (line.trim()) this.stderrHandler?.(line);
       }

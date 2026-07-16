@@ -23,9 +23,13 @@ interface PendingRequest {
 }
 
 interface TurnWaiter {
+  threadId: string;
   resolve: (value: TurnCompletedParams) => void;
   reject: (error: Error) => void;
   timeout: NodeJS.Timeout;
+  /** 無活動タイムアウト。threadのイベントが届くたびに延長される。 */
+  inactivityTimeoutMs: number;
+  lastActivityAt: number;
 }
 
 export interface AppServerClientOptions {
@@ -204,7 +208,12 @@ export class CodexAppServerClient {
     }
   }
 
-  waitForTurn(threadId: string, turnId: string, timeoutMs: number): Promise<TurnCompletedParams> {
+  /**
+   * turnの完了を待つ。`inactivityTimeoutMs` は壁時計の上限ではなく無活動タイムアウト:
+   * threadのイベントが流れ続けている限り待ち続け、イベントが途絶えたまま
+   * この時間が経過したときだけ打ち切る。
+   */
+  waitForTurn(threadId: string, turnId: string, inactivityTimeoutMs: number): Promise<TurnCompletedParams> {
     const key = `${threadId}:${turnId}`;
     const completed = this.completedTurns.get(key);
     if (completed) {
@@ -212,11 +221,25 @@ export class CodexAppServerClient {
       return Promise.resolve(completed);
     }
     return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.turnWaiters.delete(key);
-        reject(new Error(`Timed out waiting for turn ${turnId}.`));
-      }, timeoutMs);
-      this.turnWaiters.set(key, { resolve, reject, timeout });
+      const waiter: TurnWaiter = {
+        threadId,
+        resolve,
+        reject,
+        timeout: undefined as unknown as NodeJS.Timeout,
+        inactivityTimeoutMs,
+        lastActivityAt: Date.now(),
+      };
+      const arm = () => {
+        const remaining = waiter.lastActivityAt + waiter.inactivityTimeoutMs - Date.now();
+        if (remaining <= 0) {
+          this.turnWaiters.delete(key);
+          reject(new Error(describeInactivity(waiter.inactivityTimeoutMs)));
+          return;
+        }
+        waiter.timeout = setTimeout(arm, remaining);
+      };
+      waiter.timeout = setTimeout(arm, inactivityTimeoutMs);
+      this.turnWaiters.set(key, waiter);
     });
   }
 
@@ -420,6 +443,7 @@ export class CodexAppServerClient {
     }
 
     if (typeof message.method !== "string") return;
+    this.touchThreadWaiters(message.params);
     if (message.id !== undefined) {
       const request = message as unknown as ServerRequest;
       if (this.serverRequestListeners.size === 0) {
@@ -446,6 +470,17 @@ export class CodexAppServerClient {
       }
     }
     for (const listener of this.notificationListeners) listener(notification);
+  }
+
+  /** thread宛のnotification/requestを、そのthreadのturn待ちの「活動」として数える。 */
+  private touchThreadWaiters(params: unknown): void {
+    if (this.turnWaiters.size === 0) return;
+    const threadId = (params as { threadId?: unknown } | undefined)?.threadId;
+    if (typeof threadId !== "string") return;
+    const at = Date.now();
+    for (const waiter of this.turnWaiters.values()) {
+      if (waiter.threadId === threadId) waiter.lastActivityAt = at;
+    }
   }
 
   private handleExit(error: Error): void {
@@ -481,4 +516,11 @@ export class CodexAppServerClient {
       killer.once("error", () => resolve());
     });
   }
+}
+
+/** 無活動タイムアウトの打ち切り文言（分または秒）。 */
+export function describeInactivity(inactivityTimeoutMs: number): string {
+  const minutes = Math.round(inactivityTimeoutMs / 60_000);
+  const span = minutes >= 1 ? `${minutes}分` : `${Math.max(1, Math.round(inactivityTimeoutMs / 1_000))}秒`;
+  return `エージェントからの応答が${span}間途絶えたため、処理を打ち切りました。`;
 }

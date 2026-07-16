@@ -60,6 +60,10 @@ export interface WorkflowLimits {
   maxVisitsPerNode: number;
   /** run全体のwall-clock上限（分）。未設定なら実行時間の上限なし。 */
   maxRunMinutes?: number;
+  /**
+   * 1ターンの無活動タイムアウト（分）。エージェントからイベントが全く流れない状態が
+   * この時間続いたときだけ打ち切る。作業が動き続けている限り、ターンの実行時間に上限はない。
+   */
   turnTimeoutMinutes: number;
 }
 
