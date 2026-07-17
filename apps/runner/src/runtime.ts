@@ -112,7 +112,7 @@ async function raceRunDeadline<T>(work: Promise<T>, deadlineAt: number, maxRunMi
 export class LoopRunner {
   private pollTimer: NodeJS.Timeout | null = null;
   private tickBusy = false;
-  /** 実行中のrun。cwdごとの排他はDB側の制約で担保しつつ、ここで並行実行を管理する。 */
+  /** 実行中のrun。同一cwdの同時実行も許可している（衝突は利用者の自己責任）。 */
   private readonly activeContexts = new Map<string, ActiveContext>();
   private readonly activePromises = new Map<string, Promise<void>>();
   private shuttingDown = false;

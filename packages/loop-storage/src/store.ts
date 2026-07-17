@@ -307,35 +307,9 @@ export class LoopStore {
       );
     `);
 
-    this.db.transaction(() => {
-      const duplicates = this.db
-        .prepare(`SELECT LOWER(cwd) AS lease_key FROM runs
-          WHERE status NOT IN ('completed','failed','cancelled')
-          GROUP BY LOWER(cwd) HAVING COUNT(*) > 1`)
-        .all() as SqlRow[];
-      for (const duplicate of duplicates) {
-        const rows = this.db
-          .prepare(`SELECT id FROM runs WHERE LOWER(cwd) = ?
-            AND status NOT IN ('completed','failed','cancelled') ORDER BY created_at, id`)
-          .all(String(duplicate.lease_key)) as SqlRow[];
-        for (const row of rows.slice(1)) {
-          const runId = String(row.id);
-          const changedAt = now();
-          this.db
-            .prepare("UPDATE node_visits SET status = 'outcome_unknown', completed_at = ? WHERE run_id = ? AND status = 'running'")
-            .run(changedAt, runId);
-          this.db
-            .prepare(`UPDATE runs SET status = 'failed', current_node_visit_id = NULL, next_node_id = NULL,
-              termination_reason = 'Duplicate working-directory lease repaired during migration.',
-              completed_at = ?, updated_at = ? WHERE id = ?`)
-            .run(changedAt, changedAt, runId);
-          this.appendEventInTransaction(runId, "run.failed", { reason: "duplicate_cwd_lease_repaired" }, null, null, null);
-        }
-      }
-    }).immediate();
-    this.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_one_active_cwd
-      ON runs(cwd COLLATE NOCASE)
-      WHERE status NOT IN ('completed','failed','cancelled')`);
+    // 同一cwdの排他は撤廃した（同じ作業フォルダでの同時実行は利用者の自己責任）。
+    // 過去のDBに残っている排他インデックスは剥がす。
+    this.db.exec("DROP INDEX IF EXISTS idx_runs_one_active_cwd");
   }
 
   ensureWorkflow(definition: WorkflowDefinition): WorkflowDefinition {
@@ -380,18 +354,6 @@ export class LoopStore {
     const digest = createHash("sha256").update(definitionJson).digest("hex");
 
     const transaction = this.db.transaction(() => {
-      const active = this.db
-        .prepare(`SELECT runs.id, workflows.name AS workflow_name FROM runs
-          LEFT JOIN workflows ON workflows.id = runs.workflow_id
-          WHERE runs.cwd = ? COLLATE NOCASE
-          AND runs.status NOT IN ('completed','failed','cancelled') LIMIT 1`)
-        .get(definition.cwd) as SqlRow | undefined;
-      if (active) {
-        const holder = active.workflow_name ? `ワークフロー「${String(active.workflow_name)}」` : "別のワークフロー";
-        throw new Error(
-          `この作業フォルダでは${holder}の実行がまだ終わっていません。そのワークフローを開いて実行を停止するか、作業フォルダを分けてください。`,
-        );
-      }
       const row = this.db
         .prepare("SELECT COALESCE(MAX(revision), 0) AS revision FROM workflow_versions WHERE workflow_id = ?")
         .get(workflowId) as SqlRow;

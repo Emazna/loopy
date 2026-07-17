@@ -26,13 +26,16 @@ describe("LoopStore", () => {
     store.close();
   });
 
-  it("does not allow two active runs to lease the same cwd", () => {
+  it("allows two active runs to share the same cwd", () => {
     const dir = mkdtempSync(join(tmpdir(), "loop-store-"));
     cleanups.push(dir);
     const store = new LoopStore(join(dir, "test.sqlite3"));
     store.ensureWorkflow(createDefaultWorkflow(dir, "gpt-5.4"));
-    store.createRun();
-    expect(() => store.createRun()).toThrow(/実行がまだ終わっていません/);
+    const first = store.createRun();
+    const second = store.createRun();
+    expect(second.id).not.toBe(first.id);
+    expect(store.getRun(first.id)?.status).toBe("queued");
+    expect(store.getRun(second.id)?.status).toBe("queued");
     store.close();
   });
 
