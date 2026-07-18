@@ -18,6 +18,12 @@ import type {
 /** turn/start相当が確実に拒否された（プロセスを開始できなかった）ことを表す。 */
 export class ClaudeTurnRejectedError extends Error {}
 
+/**
+ * プロセスのexit後、残りのstdoutを取りこぼさないための猶予。
+ * `close`を待たずに確定させるため、この間に届いた行だけ拾う。
+ */
+const EXIT_DRAIN_MS = 750;
+
 interface ActiveTurn {
   turnId: string;
   threadId: string;
@@ -35,6 +41,8 @@ interface ActiveTurn {
   terminal: Promise<TurnCompletedParams>;
   toolUses: Map<string, { name: string; command: string }>;
   stdoutBuffer: string;
+  /** exit後の取りこぼし待ちタイマー。closeが先に来たら解除する。 */
+  exitTimer?: NodeJS.Timeout;
 }
 
 /**
@@ -278,7 +286,10 @@ export class ClaudeCodeClient {
   }
 
   private wireTurnStreams(turn: ActiveTurn): void {
+    turn.child.stdout.on("error", () => undefined);
+    turn.child.stderr.on("error", () => undefined);
     turn.child.stdout.on("data", (chunk: Buffer) => {
+      if (turn.settled) return;
       turn.lastActivityAt = Date.now();
       turn.stdoutBuffer += chunk.toString("utf8");
       let newlineIndex = turn.stdoutBuffer.indexOf("\n");
@@ -290,19 +301,38 @@ export class ClaudeCodeClient {
       }
     });
     turn.child.stderr.on("data", (chunk: Buffer) => {
+      if (turn.settled) return;
       turn.lastActivityAt = Date.now();
       for (const line of chunk.toString("utf8").split(/\r?\n/u)) {
         if (line.trim()) this.stderrHandler?.(line);
       }
     });
-    turn.child.on("close", (code) => {
-      const leftover = turn.stdoutBuffer.trim();
-      if (leftover) this.handleStreamLine(turn, leftover);
-      this.settleTurn(turn, code);
+    // "close"は「プロセス終了 かつ 全stdioパイプが閉じた」ときにしか発火しない。
+    // エージェントがバックグラウンドで起動したdevサーバー等の孫プロセスが
+    // stdoutを継承したまま生き残ると、closeは永久に来ない（実測: 完了済みのターンが
+    // 26分以上ハングした）。プロセス自身のexitを正とし、closeはその先着として扱う。
+    turn.child.on("exit", (code) => {
+      if (turn.settled) return;
+      turn.exitTimer = setTimeout(() => this.finalizeTurn(turn, code), EXIT_DRAIN_MS);
     });
-    turn.child.on("error", () => {
-      this.settleTurn(turn, null);
-    });
+    turn.child.on("close", (code) => this.finalizeTurn(turn, code));
+    turn.child.on("error", () => this.finalizeTurn(turn, null));
+  }
+
+  /** 残りのstdoutを吸い出してターンを確定し、孫プロセスが握るパイプを手放す。 */
+  private finalizeTurn(turn: ActiveTurn, exitCode: number | null): void {
+    if (turn.settled) return;
+    if (turn.exitTimer) {
+      clearTimeout(turn.exitTimer);
+      turn.exitTimer = undefined;
+    }
+    const leftover = turn.stdoutBuffer.trim();
+    turn.stdoutBuffer = "";
+    if (leftover) this.handleStreamLine(turn, leftover);
+    this.settleTurn(turn, exitCode);
+    // 孫プロセスが生き残っている場合、こちらがpipeを持ち続けるとfdが溜まるので明示的に閉じる。
+    turn.child.stdout.destroy();
+    turn.child.stderr.destroy();
   }
 
   private settleTurn(turn: ActiveTurn, exitCode: number | null): void {

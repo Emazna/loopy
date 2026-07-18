@@ -144,6 +144,7 @@ npm run smoke:controls
 - `maxRunMinutes`は未設定なら実行時間の上限なし（既定）。設定した場合はpause中も含むwall-clock上限です。
 - `turnTimeoutMinutes`（既定30分）は**無活動タイムアウト**です。エージェントからイベント（本文・推論サマリー・コマンド出力など）が流れ続けている限り1ターンが何時間かかっても打ち切りません。イベントが全く途絶えたままこの時間が経過したときだけ、ハングとみなして中断し`recovery_required`へ倒します。出力を一切吐かない長時間コマンド実行中は「無活動」に見える点に注意してください。
 - `turn/interrupt`はbackground terminalを終了しません。prototypeでは残存processを自動的に「停止済み」と扱いません。
+- Claudeエンジンのturnは子プロセスの`exit`で確定します（`close`待ちにしない）。エージェントがバックグラウンドで起動したdevサーバー等の孫プロセスがstdioパイプを継承したまま生き残ると`close`は発火しないため、`close`だけに頼ると完了済みのturnが無限に待たされます。
 - transport loss、timeout、Runner restartでturn outcomeが不明な場合、automatic retryは行いません。
 - reasoning summaryはActivityとして保存しますが、raw reasoning eventは保存・配信しません。
 
